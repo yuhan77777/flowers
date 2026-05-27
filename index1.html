@@ -96,13 +96,18 @@
         .btn-success:hover {
             background-color: #27ae60;
         }
+        .demo-text {
+            font-size: 12px;
+            color: #7f8c8d;
+            margin-top: 4px;
+        }
     </style>
 </head>
 <body>
 
 <div class="container">
     <h2>🗺️ 地圖光圈 - 智慧路徑與隨機座標生成器</h2>
-    <p>請輸入原始花朵中心座標，本工具支援自動規劃最短步行路線或全隨機打亂。</p>
+    <p>請在左側輸入原始花朵中心座標，本工具支援自動規劃最短步行路線或全隨機打亂。</p>
     
     <div class="config-box">
         <div class="config-group">
@@ -135,7 +140,8 @@
     <div class="flex-grid">
         <div class="col">
             <label for="inputCoords">原始花朵中心座標 (每行一組)</label>
-            <textarea id="inputCoords" placeholder="26.862093,81.037686..."></textarea>
+            <textarea id="inputCoords" placeholder="請貼入座標，例如：&#10;26.862093,81.037686&#10;26.863357,81.037418"></textarea>
+            <div class="demo-text">💡 提示：手動將座標貼進來，每行一組即可開始計算。</div>
         </div>
         
         <div class="col">
@@ -151,39 +157,30 @@
 </div>
 
 <script>
-// 預填原始座標
-document.getElementById('inputCoords').value = `26.862093,81.037686
-26.863357,81.037418
-26.864346,81.037161
-26.863167,81.038422
-26.865045,81.039120
-26.865547,81.039940
-26.863643,81.040191`;
-
-// 計算距離平方
+// 基礎數學：計算兩點距離平方
 function getDistanceSq(p1, p2) {
-    return Math.pow(p1.lat - p2.lat, 2) + Math.pow(p1.lng - p2.lng, 2);
+    return (p1.lat - p2.lat) * (p1.lat - p2.lat) + (p1.lng - p2.lng) * (p1.lng - p2.lng);
 }
 
-// 最佳路徑規劃 (Nearest Neighbor 演算法)
+// 智慧路徑排序
 function optimizePath(coordsList) {
     if (coordsList.length <= 2) return coordsList;
     
-    let unvisited = [];
-    for(let i=0; i<coordsList.length; i++) {
+    var unvisited = [];
+    for(var i = 0; i < coordsList.length; i++) {
         unvisited.push(coordsList[i]);
     }
     
-    let optimized = [];
-    let current = unvisited.shift();
+    var optimized = [];
+    var current = unvisited.shift();
     optimized.push(current);
     
     while (unvisited.length > 0) {
-        let nearestIndex = 0;
-        let minDist = getDistanceSq(current, unvisited[0]);
+        var nearestIndex = 0;
+        var minDist = getDistanceSq(current, unvisited[0]);
         
-        for (let i = 1; i < unvisited.length; i++) {
-            let dist = getDistanceSq(current, unvisited[i]);
+        for (var i = 1; i < unvisited.length; i++) {
+            var dist = getDistanceSq(current, unvisited[i]);
             if (dist < minDist) {
                 minDist = dist;
                 nearestIndex = i;
@@ -195,73 +192,75 @@ function optimizePath(coordsList) {
     return optimized;
 }
 
-// 隨機打亂演算法
+// 隨機洗牌
 function shuffleArray(array) {
-    for (let i = array.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        let temp = array[i];
+    for (var i = array.length - 1; i > 0; i--) {
+        var j = Math.floor(Math.random() * (i + 1));
+        var temp = array[i];
         array[i] = array[j];
         array[j] = temp;
     }
     return array;
 }
 
+// 主執行程式
 function mainProcessor() {
-    const inputText = document.getElementById('inputCoords').value.trim();
+    var inputEl = document.getElementById('inputCoords');
+    var outputEl = document.getElementById('outputCoords');
+    
+    if (!inputEl || !outputEl) return;
+    
+    var inputText = inputEl.value.trim();
     if (!inputText) { 
-        alert('請先輸入座標！'); 
+        alert('請先在左側框內輸入或貼上座標！'); 
         return; 
     }
 
-    const lines = inputText.split('\n');
-    let coords = [];
+    var lines = inputText.split('\n');
+    var coords = [];
     
-    for (let i = 0; i < lines.length; i++) {
-        const line = lines[i].trim();
+    for (var i = 0; i < lines.length; i++) {
+        var line = lines[i].trim();
         if(!line) continue;
         
-        const parts = line.split(',');
+        var parts = line.split(',');
         if (parts.length === 2) {
-            const latVal = parseFloat(parts[0].trim());
-            const lngVal = parseFloat(parts[1].trim());
+            var latVal = parseFloat(parts[0].trim());
+            var lngVal = parseFloat(parts[1].trim());
             if (!isNaN(latVal) && !isNaN(lngVal)) {
-                coords.push({ lat: latVal, lng: lngVal, originalId: i + 1 });
+                coords.push({ lat: latVal, lng: lngVal, originalId: (i + 1) });
             }
         }
     }
 
     if (coords.length === 0) { 
-        alert('無法辨識座標，請檢查格式是否為「緯度,經度」'); 
+        alert('無法辨識座標！請確保每行格式為：緯度,經度\n例如：26.862093,81.037686'); 
         return; 
     }
 
-    // 讀取設定值
-    const selectedMode = document.getElementById('processMode').value;
-    const radius = parseFloat(document.getElementById('radiusDistance').value) || 12;
-    const direction = document.getElementById('outputMode').value;
+    var selectedMode = document.getElementById('processMode').value;
+    var radius = parseFloat(document.getElementById('radiusDistance').value) || 12;
+    var direction = document.getElementById('outputMode').value;
     
-    // 經緯度公尺轉換常數
-    const latDegreePerMeter = 1 / 111000;
-    const lngDegreePerMeter = 1 / 99000;
-    const offsetLatVal = radius * latDegreePerMeter;
-    const offsetLngVal = radius * lngDegreePerMeter;
+    var latDegreePerMeter = 1 / 111000;
+    var lngDegreePerMeter = 1 / 99000;
+    var offsetLatVal = radius * latDegreePerMeter;
+    var offsetLngVal = radius * lngDegreePerMeter;
 
-    // 1. 順序模式：進行最短路徑計算
     if (selectedMode === 'bestPath') {
         coords = optimizePath(coords);
     }
 
-    let rawResults = [];
+    var rawResults = [];
 
-    // 2. 產生外圍偏移點位
-    for (let i = 0; i < coords.length; i++) {
-        const c = coords[i];
-        const displayId = selectedMode === 'bestPath' ? `第 ${i + 1} 站` : `原中心點 ${c.originalId}`;
+    for (var i = 0; i < coords.length; i++) {
+        var c = coords[i];
+        var displayId = (selectedMode === 'bestPath') ? ('第 ' + (i + 1) + ' 站') : ('原中心點 ' + c.originalId);
         
-        const north = (c.lat + offsetLatVal).toFixed(6) + ',' + c.lng.toFixed(6);
-        const south = (c.lat - offsetLatVal).toFixed(6) + ',' + c.lng.toFixed(6);
-        const east  = c.lat.toFixed(6) + ', ' + (c.lng + offsetLngVal).toFixed(6);
-        const west  = c.lat.toFixed(6) + ', ' + (c.lng - offsetLngVal).toFixed(6);
+        var north = (c.lat + offsetLatVal).toFixed(6) + ',' + c.lng.toFixed(6);
+        var south = (c.lat - offsetLatVal).toFixed(6) + ',' + c.lng.toFixed(6);
+        var east  = c.lat.toFixed(6) + ',' + (c.lng + offsetLngVal).toFixed(6);
+        var west  = c.lat.toFixed(6) + ',' + (c.lng - offsetLngVal).toFixed(6);
 
         if (direction === 'four') {
             rawResults.push({ coord: north, note: displayId + ' [北]' });
@@ -269,7 +268,7 @@ function mainProcessor() {
             rawResults.push({ coord: east,  note: displayId + ' [東]' });
             rawResults.push({ coord: west,  note: displayId + ' [西]' });
         } else {
-            let targetCoord = '';
+            var targetCoord = '';
             if (direction === 'north') targetCoord = north;
             if (direction === 'south') targetCoord = south;
             if (direction === 'east')  targetCoord = east;
@@ -278,33 +277,31 @@ function mainProcessor() {
         }
     }
 
-    // 3. 隨機模式：將所有人踩點結果徹底打亂
     if (selectedMode === 'shuffle') {
         rawResults = shuffleArray(rawResults);
     }
 
-    // 4. 輸出到文字框
-    let displayLines = [];
-    for (let i = 0; i < rawResults.length; i++) {
+    var displayLines = [];
+    for (var i = 0; i < rawResults.length; i++) {
         displayLines.push(rawResults[i].coord + ' // ' + rawResults[i].note);
     }
     
-    document.getElementById('outputCoords').value = displayLines.join('\n');
+    outputEl.value = displayLines.join('\n');
 }
 
 function copyToClipboard() {
-    const outputText = document.getElementById('outputCoords');
-    if (!outputText.value || outputText.value.indexOf('//') === -1) { 
+    var outputEl = document.getElementById('outputCoords');
+    if (!outputEl || !outputEl.value) { 
         alert('請先點擊計算按鈕產生座標！'); 
         return; 
     }
     
-    let cleanText = outputText.value.replace(/\/\/.*$/gm, '').replace(/^\s*[\r\n]/gm, '').trim();
+    var cleanText = outputEl.value.replace(/\/\/.*$/gm, '').replace(/^\s*[\r\n]/gm, '').trim();
     
     navigator.clipboard.writeText(cleanText).then(function() {
-        alert('📋 乾淨的座標資料（已自動過濾備註）已成功複製！');
+        alert('📋 乾淨的座標資料已複製成功！');
     }).catch(function() {
-        alert('複製失敗，請手動全選右側框內的文字進行複製。');
+        alert('複製功能被瀏覽器攔截，請直接手動框選右側框內文字複製。');
     });
 }
 </script>
