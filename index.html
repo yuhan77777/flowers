@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>地圖光圈 - 智慧路徑與隨機座標生成器</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: #f4f6f9;
+            color: #333;
+            padding: 20px;
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+        .container {
+            background: white;
+            padding: 25px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+        }
+        h2 {
+            color: #2c3e50;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 8px;
+            margin-top: 0;
+        }
+        .config-box {
+            background: #ebf5fb;
+            border-left: 4px solid #3498db;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 0 4px 4px 0;
+        }
+        .config-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            align-items: center;
+        }
+        label {
+            font-weight: bold;
+        }
+        input[type="number"], select {
+            padding: 8px 12px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 14px;
+            background: white;
+        }
+        .flex-grid {
+            display: flex;
+            gap: 20px;
+            margin-top: 15px;
+        }
+        .col {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+        textarea {
+            width: 100%;
+            height: 320px;
+            padding: 10px;
+            box-sizing: border-box;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 14px;
+            resize: vertical;
+        }
+        .btn-group {
+            margin-top: 20px;
+            display: flex;
+            gap: 12px;
+        }
+        button {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 15px;
+        }
+        .btn-primary {
+            background-color: #3498db;
+            color: white;
+        }
+        .btn-primary:hover {
+            background-color: #2980b9;
+        }
+        .btn-success {
+            background-color: #2ecc71;
+            color: white;
+        }
+        .btn-success:hover {
+            background-color: #27ae60;
+        }
+        .demo-text {
+            font-size: 12px;
+            color: #7f8c8d;
+            margin-top: 4px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>🗺️ 地圖光圈 - 智慧路徑與隨機座標生成器</h2>
+    <p>請在左側輸入原始花朵中心座標，本工具支援自動規劃最短步行路線或全隨機打亂。</p>
+    
+    <div class="config-box">
+        <div class="config-group">
+            <div>
+                <label for="processMode">🧙‍♂️ 排列模式：</label>
+                <select id="processMode">
+                    <option value="bestPath">✨ 順序模式 (自動計算最佳最短路徑)</option>
+                    <option value="shuffle">🎲 隨機模式 (完全打亂順序)</option>
+                </select>
+            </div>
+            
+            <div>
+                <label for="radiusDistance">📏 光圈半徑 (公尺): </label>
+                <input type="number" id="radiusDistance" value="12" min="1">
+            </div>
+
+            <div>
+                <label for="outputMode">🧭 生成方向: </label>
+                <select id="outputMode">
+                    <option value="four">生成 4 個方向 (東南西北)</option>
+                    <option value="north">只生成正北方點位</option>
+                    <option value="south">只生成正南方點位</option>
+                    <option value="east">只生成正東方點位</option>
+                    <option value="west">只生成正西方點位</option>
+                </select>
+            </div>
+        </div>
+    </div>
+
+    <div class="flex-grid">
+        <div class="col">
+            <label for="inputCoords">原始花朵中心座標 (每行一組)</label>
+            <textarea id="inputCoords" placeholder="請貼入座標，例如：&#10;26.862093,81.037686&#10;26.863357,81.037418"></textarea>
+            <div class="demo-text">💡 提示：手動將座標貼進來，每行一組即可開始計算。</div>
+        </div>
+        
+        <div class="col">
+            <label for="outputCoords">運算後的果實觸發點座標</label>
+            <textarea id="outputCoords" readonly placeholder="點擊下方按鈕後，轉換後的座標會立刻顯示在這裡..."></textarea>
+        </div>
+    </div>
+
+    <div class="btn-group">
+        <button class="btn-primary" onclick="mainProcessor()">🚀 開始計算點位</button>
+        <button class="btn-success" onclick="copyToClipboard()">📋 複製結果座標</button>
+    </div>
+</div>
+
+<script>
+// 基礎數學：計算兩點距離平方
+function getDistanceSq(p1, p2) {
+    return (p1.lat - p2.lat) * (p1.lat - p2.lat) + (p1.lng - p2.lng) * (p1.lng - p2.lng);
+}
+
+// 智慧路徑排序
+function optimizePath(coordsList) {
+    if (coordsList.length <= 2) return coordsList;
+    
+    var unvisited = [];
+    for(var i = 0; i < coordsList.length; i++) {
+        unvisited.push(coordsList[i]);
+    }
+    
+    var optimized = [];
+    var current = unvisited.shift();
+    optimized.push(current);
+    
+    while (unvisited.length > 0) {
+        var nearestIndex = 0;
+        var minDist = getDistanceSq(current, unvisited[0]);
+        
+        for (var i = 1; i < unvisited.length; i++) {
+            var dist = getDistanceSq(current, unvisited[i]);
+            if (dist < minDist) {
+                minDist = dist;
+                nearestIndex = i;
+            }
+        }
+        current = unvisited.splice(nearestIndex, 1)[0];
+        optimized.push(current);
+    }
+    return optimized;
+}
+
+// 隨機洗牌
+function shuffleArray(array) {
+    for (var i = array.length - 1; i > 0; i--) {
+        var j = Math.floor(Math.random() * (i + 1));
+        var temp = array[i];
+        array[i] = array[j];
+        array[j] = temp;
+    }
+    return array;
+}
+
+// 主執行程式
+function mainProcessor() {
+    var inputEl = document.getElementById('inputCoords');
+    var outputEl = document.getElementById('outputCoords');
+    
+    if (!inputEl || !outputEl) return;
+    
+    var inputText = inputEl.value.trim();
+    if (!inputText) { 
+        alert('請先在左側框內輸入或貼上座標！'); 
+        return; 
+    }
+
+    var lines = inputText.split('\n');
+    var coords = [];
+    
+    for (var i = 0; i < lines.length; i++) {
+        var line = lines[i].trim();
+        if(!line) continue;
+        
+        var parts = line.split(',');
+        if (parts.length === 2) {
+            var latVal = parseFloat(parts[0].trim());
+            var lngVal = parseFloat(parts[1].trim());
+            if (!isNaN(latVal) && !isNaN(lngVal)) {
+                coords.push({ lat: latVal, lng: lngVal, originalId: (i + 1) });
+            }
+        }
+    }
+
+    if (coords.length === 0) { 
+        alert('無法辨識座標！請確保每行格式為：緯度,經度\n例如：26.862093,81.037686'); 
+        return; 
+    }
+
+    var selectedMode = document.getElementById('processMode').value;
+    var radius = parseFloat(document.getElementById('radiusDistance').value) || 12;
+    var direction = document.getElementById('outputMode').value;
+    
+    var latDegreePerMeter = 1 / 111000;
+    var lngDegreePerMeter = 1 / 99000;
+    var offsetLatVal = radius * latDegreePerMeter;
+    var offsetLngVal = radius * lngDegreePerMeter;
+
+    if (selectedMode === 'bestPath') {
+        coords = optimizePath(coords);
+    }
+
+    var rawResults = [];
+
+    for (var i = 0; i < coords.length; i++) {
+        var c = coords[i];
+        var displayId = (selectedMode === 'bestPath') ? ('第 ' + (i + 1) + ' 站') : ('原中心點 ' + c.originalId);
+        
+        var north = (c.lat + offsetLatVal).toFixed(6) + ',' + c.lng.toFixed(6);
+        var south = (c.lat - offsetLatVal).toFixed(6) + ',' + c.lng.toFixed(6);
+        var east  = c.lat.toFixed(6) + ',' + (c.lng + offsetLngVal).toFixed(6);
+        var west  = c.lat.toFixed(6) + ',' + (c.lng - offsetLngVal).toFixed(6);
+
+        if (direction === 'four') {
+            rawResults.push({ coord: north, note: displayId + ' [北]' });
+            rawResults.push({ coord: south, note: displayId + ' [南]' });
+            rawResults.push({ coord: east,  note: displayId + ' [東]' });
+            rawResults.push({ coord: west,  note: displayId + ' [西]' });
+        } else {
+            var targetCoord = '';
+            if (direction === 'north') targetCoord = north;
+            if (direction === 'south') targetCoord = south;
+            if (direction === 'east')  targetCoord = east;
+            if (direction === 'west')  targetCoord = west;
+            rawResults.push({ coord: targetCoord, note: displayId });
+        }
+    }
+
+    if (selectedMode === 'shuffle') {
+        rawResults = shuffleArray(rawResults);
+    }
+
+    var displayLines = [];
+    for (var i = 0; i < rawResults.length; i++) {
+        displayLines.push(rawResults[i].coord + ' // ' + rawResults[i].note);
+    }
+    
+    outputEl.value = displayLines.join('\n');
+}
+
+function copyToClipboard() {
+    var outputEl = document.getElementById('outputCoords');
+    if (!outputEl || !outputEl.value) { 
+        alert('請先點擊計算按鈕產生座標！'); 
+        return; 
+    }
+    
+    var cleanText = outputEl.value.replace(/\/\/.*$/gm, '').replace(/^\s*[\r\n]/gm, '').trim();
+    
+    navigator.clipboard.writeText(cleanText).then(function() {
+        alert('📋 乾淨的座標資料已複製成功！');
+    }).catch(function() {
+        alert('複製功能被瀏覽器攔截，請直接手動框選右側框內文字複製。');
+    });
+}
+</script>
+
+</body>
+</html>
