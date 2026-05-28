@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>地圖光圈 - 智慧路徑與安全避障生成器</title>
+    <title>地圖光圈 - 智慧路徑與座標記憶網站</title>
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -89,7 +89,6 @@
             cursor: pointer;
             font-weight: bold;
             font-size: 15px;
-            transition: background 0.2s;
         }
         .btn-primary { background-color: #3498db; color: white; }
         .btn-primary:hover { background-color: #2980b9; }
@@ -98,7 +97,6 @@
         .btn-save { background-color: #9b59b6; color: white; }
         .btn-save:hover { background-color: #8e44ad; }
         
-        /* 記憶庫清單樣式 */
         .history-list {
             list-style: none;
             padding: 0;
@@ -134,6 +132,8 @@
             font-size: 11px;
             border-radius: 3px;
             margin-left: 5px;
+            border: none;
+            cursor: pointer;
         }
         .btn-del:hover { background: #c0392b; }
     </style>
@@ -142,7 +142,7 @@
 
 <div class="container">
     <h2>🗺️ 地圖光圈 - 智慧路徑與座標記憶網站</h2>
-    <p>請在左側輸入座標，本工具支援自動規劃最短路線、安全避障，並可無限儲存你的專屬歷史清單。</p>
+    <p>請在左側輸入原始座標。本工具支援最短路徑、安全避障，並可儲存歷史清單。</p>
     
     <div class="config-box">
         <div class="config-group">
@@ -190,11 +190,10 @@
             <label>💾 儲存當前輸入</label>
             <div style="display: flex; gap: 5px; margin-top: 8px; margin-bottom: 15px;">
                 <input type="text" id="saveName" placeholder="輸入此路線名稱..." style="width: 100%; padding: 6px;">
-                <button class="btn-save" onclick="saveCurrentCoords()" style="padding: 6px 12px; font-size: 13px;">儲存</button>
+                <button class="btn-save" onclick="saveCurrentCoords()">儲存</button>
             </div>
             <label>📋 已存清單 (點擊可載入)</label>
-            <ul id="historyList" class="history-list">
-                </ul>
+            <ul id="historyList" class="history-list"></ul>
         </div>
         
         <div class="col">
@@ -210,26 +209,17 @@
 </div>
 
 <script>
-// 預填預設範例座標
-document.getElementById('inputCoords').value = `26.862093,81.037686
-26.863357,81.037418
-26.864346,81.037161
-26.863167,81.038422
-26.865045,81.039120
-26.865547,81.039940
-26.863643,81.040191`;
+// 預填範例座標
+document.getElementById('inputCoords').value = "26.862093,81.037686\n26.863357,81.037418\n26.864346,81.037161\n26.863167,81.038422\n26.865045,81.039120\n26.865547,81.039940\n26.863643,81.040191";
 
-// 網頁開啟時，自動載入歷史紀錄
 window.onload = function() {
     renderHistory();
 };
 
-// 基礎數學：計算距離平方
 function getDistanceSq(p1, p2) {
     return (p1.lat - p2.lat) * (p1.lat - p2.lat) + (p1.lng - p2.lng) * (p1.lng - p2.lng);
 }
 
-// 智慧路徑排序
 function optimizePath(coordsList) {
     if (coordsList.length <= 2) return coordsList;
     var unvisited = [];
@@ -255,7 +245,6 @@ function optimizePath(coordsList) {
     return optimized;
 }
 
-// 隨機洗牌
 function shuffleArray(array) {
     for (var i = array.length - 1; i > 0; i--) {
         var j = Math.floor(Math.random() * (i + 1));
@@ -266,7 +255,6 @@ function shuffleArray(array) {
     return array;
 }
 
-// 歷史紀錄儲存功能
 function saveCurrentCoords() {
     var name = document.getElementById('saveName').value.trim();
     var coordsText = document.getElementById('inputCoords').value.trim();
@@ -274,48 +262,51 @@ function saveCurrentCoords() {
     if (!name) { alert('請輸入要儲存的名稱！'); return; }
     if (!coordsText) { alert('左側輸入框沒有座標可以儲存！'); return; }
     
-    var store = localStorage.getItem('map_coord_history');
-    var historyObj = store ? JSON.parse(store) : {};
-    
-    historyObj[name] = coordsText; // 以名稱為 Key 儲存內容
-    localStorage.setItem('map_coord_history', JSON.stringify(historyObj));
-    
-    document.getElementById('saveName').value = ''; // 清空輸入框
-    renderHistory(); // 重新整理清單
-    alert('💾 紀錄「' + name + '」儲存成功！');
+    try {
+        var store = localStorage.getItem('map_coord_history');
+        var historyObj = store ? JSON.parse(store) : {};
+        historyObj[name] = coordsText;
+        localStorage.setItem('map_coord_history', JSON.stringify(historyObj));
+        document.getElementById('saveName').value = '';
+        renderHistory();
+        alert('儲存成功！');
+    } catch(e) {
+        alert('儲存失敗：您的瀏覽器隱私設定或無痕模式封鎖了本機儲存功能。');
+    }
 }
 
-// 渲染歷史紀錄清單到畫面上
 function renderHistory() {
     var listEl = document.getElementById('historyList');
     if (!listEl) return;
     listEl.innerHTML = '';
     
-    var store = localStorage.getItem('map_coord_history');
-    if (!store) {
-        listEl.innerHTML = '<li style="color:#aaa; font-size:12px; padding:5px;">暫無儲存紀錄</li>';
-        return;
-    }
-    
-    var historyObj = JSON.parse(store);
-    var keys = Object.keys(historyObj);
-    
-    if (keys.length === 0) {
-        listEl.innerHTML = '<li style="color:#aaa; font-size:12px; padding:5px;">暫無儲存紀錄</li>';
-        return;
-    }
-    
-    for (var i = 0; i < keys.length; i++) {
-        (function(key) {
+    try {
+        var store = localStorage.getItem('map_coord_history');
+        if (!store) {
+            listEl.innerHTML = '<li style="color:#aaa; font-size:12px; padding:5px;">暫無儲存紀錄</li>';
+            return;
+        }
+        var historyObj = JSON.parse(store);
+        var keys = Object.keys(historyObj);
+        
+        if (keys.length === 0) {
+            listEl.innerHTML = '<li style="color:#aaa; font-size:12px; padding:5px;">暫無儲存紀錄</li>';
+            return;
+        }
+        
+        for (var i = 0; i < keys.length; i++) {
+            var key = keys[i];
             var li = document.createElement('li');
             li.className = 'history-item';
             
             var nameSpan = document.createElement('span');
             nameSpan.className = 'history-name';
             nameSpan.innerText = key;
-            // 點擊名稱：將座標載入到左側輸入框
-            nameSpan.onclick = function() {
-                document.getElementById('inputCoords').value = historyObj[key];
-            };
             
-            va
+            (function(k) {
+                nameSpan.onclick = function() {
+                    document.getElementById('inputCoords').value = historyObj[k];
+                };
+            })(key);
+            
+            var d
