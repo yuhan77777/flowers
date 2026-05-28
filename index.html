@@ -190,7 +190,7 @@
             <label>💾 儲存當前輸入</label>
             <div style="display: flex; gap: 5px; margin-top: 8px; margin-bottom: 15px;">
                 <input type="text" id="saveName" placeholder="輸入此路線名稱..." style="width: 100%; padding: 6px;">
-                <button class="btn-save" onclick="saveCurrentCoords()">儲存</button>
+                <button class="btn-save" id="saveBtn">儲存</button>
             </div>
             <label>📋 已存清單 (點擊可載入)</label>
             <ul id="historyList" class="history-list"></ul>
@@ -203,19 +203,29 @@
     </div>
 
     <div class="btn-group">
-        <button class="btn-primary" onclick="mainProcessor()">🚀 開始計算點位</button>
-        <button class="btn-success" onclick="copyToClipboard()">📋 複製結果座標</button>
+        <button class="btn-primary" id="calcBtn">🚀 開始計算點位</button>
+        <button class="btn-success" id="copyBtn">📋 複製結果座標</button>
     </div>
 </div>
 
 <script>
-// 預填預設座標
-try {
-    document.getElementById('inputCoords').value = "26.862093,81.037686\n26.863357,81.037418\n26.864346,81.037161\n26.863167,81.038422\n26.865045,81.039120\n26.865547,81.039940\n26.863643,81.040191";
-} catch(e) {}
+// 1. 初始化預設值與事件綁定，確保不依賴 HTML 內聯屬性
+window.addEventListener('DOMContentLoaded', function() {
+    var inputEl = document.getElementById('inputCoords');
+    if (inputEl) {
+        inputEl.value = "26.862093,81.037686\n26.863357,81.037418\n26.864346,81.037161\n26.863167,81.038422\n26.865045,81.039120\n26.865547,81.039940\n26.863643,81.040191";
+    }
 
-// 用最高級別的 window 綁定確保按鈕百分之百叫得動
-window.mainProcessor = function() {
+    // 綁定按鈕事件
+    document.getElementById('calcBtn').addEventListener('click', mainProcessor);
+    document.getElementById('saveBtn').addEventListener('click', saveCurrentCoords);
+    document.getElementById('copyBtn').addEventListener('click', copyToClipboard);
+
+    // 初始載入歷史紀錄
+    renderHistory();
+});
+
+function mainProcessor() {
     var inputEl = document.getElementById('inputCoords');
     var outputEl = document.getElementById('outputCoords');
     if (!inputEl || !outputEl) return;
@@ -259,31 +269,21 @@ window.mainProcessor = function() {
     var safetyLngThresholdSq = safetyBufferSq * lngDegreePerMeter * lngDegreePerMeter;
     var totalSafetyThresholdSq = safetyLatThresholdSq + safetyLngThresholdSq;
 
-    // 內建最短路徑計算
-    if (selectedMode === 'bestPath') {
-        if (coords.length > 2) {
-            var unvisited = [];
-            for(var idx = 0; idx < coords.length; idx++) { unvisited.push(coords[idx]); }
-            var optimized = [];
-            var current = unvisited.shift();
-            optimized.push(current);
-            while (unvisited.length > 0) {
-                var nearestIndex = 0;
-                var minDist = (current.lat - unvisited[0].lat)*(current.lat - unvisited[0].lat) + (current.lng - unvisited[0].lng)*(current.lng - unvisited[0].lng);
-                for (var j = 1; j < unvisited.length; j++) {
-                    var dist = (current.lat - unvisited[j].lat)*(current.lat - unvisited[j].lat) + (current.lng - unvisited[j].lng)*(current.lng - unvisited[j].lng);
-                    if (dist < minDist) { minDist = dist; nearestIndex = j; }
-                }
-                current = unvisited.splice(nearestIndex, 1)[0];
-                optimized.push(current);
+    // 最短路徑最佳化
+    if (selectedMode === 'bestPath' && coords.length > 2) {
+        var unvisited = [];
+        for(var idx = 0; idx < coords.length; idx++) { unvisited.push(coords[idx]); }
+        var optimized = [];
+        var current = unvisited.shift();
+        optimized.push(current);
+        while (unvisited.length > 0) {
+            var nearestIndex = 0;
+            var minDist = (current.lat - unvisited[0].lat)*(current.lat - unvisited[0].lat) + (current.lng - unvisited[0].lng)*(current.lng - unvisited[0].lng);
+            for (var j = 1; j < unvisited.length; j++) {
+                var dist = (current.lat - unvisited[j].lat)*(current.lat - unvisited[j].lat) + (current.lng - unvisited[j].lng)*(current.lng - unvisited[j].lng);
+                if (dist < minDist) { minDist = dist; nearestIndex = j; }
             }
-            coords = optimized;
+            current = unvisited.splice(nearestIndex, 1)[0];
+            optimized.push(current);
         }
-    }
-
-    var rawResults = [];
-    for (var i = 0; i < coords.length; i++) {
-        var c = coords[i];
-        var displayId = (selectedMode === 'bestPath') ? ('第 ' + (i + 1) + ' 站') : ('原中心點 ' + c.originalId);
-        
-        var pointsToC
+        coords = opt
