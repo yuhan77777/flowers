@@ -209,104 +209,81 @@
 </div>
 
 <script>
-// 預填範例座標
-document.getElementById('inputCoords').value = "26.862093,81.037686\n26.863357,81.037418\n26.864346,81.037161\n26.863167,81.038422\n26.865045,81.039120\n26.865547,81.039940\n26.863643,81.040191";
+// 預填預設座標
+try {
+    document.getElementById('inputCoords').value = "26.862093,81.037686\n26.863357,81.037418\n26.864346,81.037161\n26.863167,81.038422\n26.865045,81.039120\n26.865547,81.039940\n26.863643,81.040191";
+} catch(e) {}
 
-window.onload = function() {
-    renderHistory();
-};
-
-function getDistanceSq(p1, p2) {
-    return (p1.lat - p2.lat) * (p1.lat - p2.lat) + (p1.lng - p2.lng) * (p1.lng - p2.lng);
-}
-
-function optimizePath(coordsList) {
-    if (coordsList.length <= 2) return coordsList;
-    var unvisited = [];
-    for(var i = 0; i < coordsList.length; i++) { unvisited.push(coordsList[i]); }
+// 用最高級別的 window 綁定確保按鈕百分之百叫得動
+window.mainProcessor = function() {
+    var inputEl = document.getElementById('inputCoords');
+    var outputEl = document.getElementById('outputCoords');
+    if (!inputEl || !outputEl) return;
     
-    var optimized = [];
-    var current = unvisited.shift();
-    optimized.push(current);
+    var inputText = inputEl.value.trim();
+    if (!inputText) { alert('請先貼上座標！'); return; }
+
+    var lines = inputText.split('\n');
+    var originalAllCenters = [];
+    var coords = [];
     
-    while (unvisited.length > 0) {
-        var nearestIndex = 0;
-        var minDist = getDistanceSq(current, unvisited[0]);
-        for (var i = 1; i < unvisited.length; i++) {
-            var dist = getDistanceSq(current, unvisited[i]);
-            if (dist < minDist) {
-                minDist = dist;
-                nearestIndex = i;
+    for (var i = 0; i < lines.length; i++) {
+        var line = lines[i].trim();
+        if(!line) continue;
+        var parts = line.split(',');
+        if (parts.length === 2) {
+            var latVal = parseFloat(parts[0].trim());
+            var lngVal = parseFloat(parts[1].trim());
+            if (!isNaN(latVal) && !isNaN(lngVal)) {
+                var pt = { lat: latVal, lng: lngVal, originalId: (i + 1) };
+                coords.push(pt);
+                originalAllCenters.push(pt);
             }
         }
-        current = unvisited.splice(nearestIndex, 1)[0];
-        optimized.push(current);
     }
-    return optimized;
-}
 
-function shuffleArray(array) {
-    for (var i = array.length - 1; i > 0; i--) {
-        var j = Math.floor(Math.random() * (i + 1));
-        var temp = array[i];
-        array[i] = array[j];
-        array[j] = temp;
-    }
-    return array;
-}
+    if (coords.length === 0) { alert('座標格式錯誤！'); return; }
 
-function saveCurrentCoords() {
-    var name = document.getElementById('saveName').value.trim();
-    var coordsText = document.getElementById('inputCoords').value.trim();
+    var selectedMode = document.getElementById('processMode').value;
+    var isAvoid = document.getElementById('avoidMode').value === 'yes';
+    var radius = parseFloat(document.getElementById('radiusDistance').value) || 12;
+    var direction = document.getElementById('outputMode').value;
     
-    if (!name) { alert('請輸入要儲存的名稱！'); return; }
-    if (!coordsText) { alert('左側輸入框沒有座標可以儲存！'); return; }
-    
-    try {
-        var store = localStorage.getItem('map_coord_history');
-        var historyObj = store ? JSON.parse(store) : {};
-        historyObj[name] = coordsText;
-        localStorage.setItem('map_coord_history', JSON.stringify(historyObj));
-        document.getElementById('saveName').value = '';
-        renderHistory();
-        alert('儲存成功！');
-    } catch(e) {
-        alert('儲存失敗：您的瀏覽器隱私設定或無痕模式封鎖了本機儲存功能。');
-    }
-}
+    var latDegreePerMeter = 1 / 111000;
+    var lngDegreePerMeter = 1 / 99000;
+    var offsetLatVal = radius * latDegreePerMeter;
+    var offsetLngVal = radius * lngDegreePerMeter;
 
-function renderHistory() {
-    var listEl = document.getElementById('historyList');
-    if (!listEl) return;
-    listEl.innerHTML = '';
-    
-    try {
-        var store = localStorage.getItem('map_coord_history');
-        if (!store) {
-            listEl.innerHTML = '<li style="color:#aaa; font-size:12px; padding:5px;">暫無儲存紀錄</li>';
-            return;
+    var safetyBufferSq = (radius * 0.95) * (radius * 0.95); 
+    var safetyLatThresholdSq = safetyBufferSq * latDegreePerMeter * latDegreePerMeter;
+    var safetyLngThresholdSq = safetyBufferSq * lngDegreePerMeter * lngDegreePerMeter;
+    var totalSafetyThresholdSq = safetyLatThresholdSq + safetyLngThresholdSq;
+
+    // 內建最短路徑計算
+    if (selectedMode === 'bestPath') {
+        if (coords.length > 2) {
+            var unvisited = [];
+            for(var idx = 0; idx < coords.length; idx++) { unvisited.push(coords[idx]); }
+            var optimized = [];
+            var current = unvisited.shift();
+            optimized.push(current);
+            while (unvisited.length > 0) {
+                var nearestIndex = 0;
+                var minDist = (current.lat - unvisited[0].lat)*(current.lat - unvisited[0].lat) + (current.lng - unvisited[0].lng)*(current.lng - unvisited[0].lng);
+                for (var j = 1; j < unvisited.length; j++) {
+                    var dist = (current.lat - unvisited[j].lat)*(current.lat - unvisited[j].lat) + (current.lng - unvisited[j].lng)*(current.lng - unvisited[j].lng);
+                    if (dist < minDist) { minDist = dist; nearestIndex = j; }
+                }
+                current = unvisited.splice(nearestIndex, 1)[0];
+                optimized.push(current);
+            }
+            coords = optimized;
         }
-        var historyObj = JSON.parse(store);
-        var keys = Object.keys(historyObj);
+    }
+
+    var rawResults = [];
+    for (var i = 0; i < coords.length; i++) {
+        var c = coords[i];
+        var displayId = (selectedMode === 'bestPath') ? ('第 ' + (i + 1) + ' 站') : ('原中心點 ' + c.originalId);
         
-        if (keys.length === 0) {
-            listEl.innerHTML = '<li style="color:#aaa; font-size:12px; padding:5px;">暫無儲存紀錄</li>';
-            return;
-        }
-        
-        for (var i = 0; i < keys.length; i++) {
-            var key = keys[i];
-            var li = document.createElement('li');
-            li.className = 'history-item';
-            
-            var nameSpan = document.createElement('span');
-            nameSpan.className = 'history-name';
-            nameSpan.innerText = key;
-            
-            (function(k) {
-                nameSpan.onclick = function() {
-                    document.getElementById('inputCoords').value = historyObj[k];
-                };
-            })(key);
-            
-            var d
+        var pointsToC
