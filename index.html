@@ -3,14 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>地圖光圈 - 智慧路徑與隨機座標生成器</title>
+    <title>地圖光圈 - 智慧路徑與安全避障生成器</title>
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             background-color: #f4f6f9;
             color: #333;
             padding: 20px;
-            max-width: 1000px;
+            max-width: 1100px;
             margin: 0 auto;
         }
         .container {
@@ -41,7 +41,7 @@
         label {
             font-weight: bold;
         }
-        input[type="number"], select {
+        input[type="text"], input[type="number"], select {
             padding: 8px 12px;
             border: 1px solid #ccc;
             border-radius: 4px;
@@ -58,6 +58,13 @@
             display: flex;
             flex-direction: column;
         }
+        .col-sidebar {
+            flex: 0 0 250px;
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 6px;
+            border: 1px solid #e2e8f0;
+        }
         textarea {
             width: 100%;
             height: 320px;
@@ -73,6 +80,7 @@
             margin-top: 20px;
             display: flex;
             gap: 12px;
+            flex-wrap: wrap;
         }
         button {
             padding: 12px 24px;
@@ -81,33 +89,60 @@
             cursor: pointer;
             font-weight: bold;
             font-size: 15px;
+            transition: background 0.2s;
         }
-        .btn-primary {
-            background-color: #3498db;
+        .btn-primary { background-color: #3498db; color: white; }
+        .btn-primary:hover { background-color: #2980b9; }
+        .btn-success { background-color: #2ecc71; color: white; }
+        .btn-success:hover { background-color: #27ae60; }
+        .btn-save { background-color: #9b59b6; color: white; }
+        .btn-save:hover { background-color: #8e44ad; }
+        
+        /* 記憶庫清單樣式 */
+        .history-list {
+            list-style: none;
+            padding: 0;
+            margin: 10px 0 0 0;
+            max-height: 280px;
+            overflow-y: auto;
+        }
+        .history-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 10px;
+            background: white;
+            margin-bottom: 6px;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+            font-size: 13px;
+        }
+        .history-name {
+            cursor: pointer;
+            color: #2980b9;
+            font-weight: 500;
+            flex-grow: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .history-name:hover { text-decoration: underline; }
+        .btn-del {
+            background: #e74c3c;
             color: white;
+            padding: 2px 6px;
+            font-size: 11px;
+            border-radius: 3px;
+            margin-left: 5px;
         }
-        .btn-primary:hover {
-            background-color: #2980b9;
-        }
-        .btn-success {
-            background-color: #2ecc71;
-            color: white;
-        }
-        .btn-success:hover {
-            background-color: #27ae60;
-        }
-        .demo-text {
-            font-size: 12px;
-            color: #7f8c8d;
-            margin-top: 4px;
-        }
+        .btn-del:hover { background: #c0392b; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h2>🗺️ 地圖光圈 - 智慧路徑與隨機座標生成器</h2>
-    <p>請在左側輸入原始花朵中心座標，本工具支援自動規劃最短步行路線或全隨機打亂。</p>
+    <h2>🗺️ 地圖光圈 - 智慧路徑與座標記憶網站</h2>
+    <p>請在左側輸入座標，本工具支援自動規劃最短路線、安全避障，並可無限儲存你的專屬歷史清單。</p>
     
     <div class="config-box">
         <div class="config-group">
@@ -120,8 +155,16 @@
             </div>
             
             <div>
+                <label for="avoidMode">🛑 踩雷限制：</label>
+                <select id="avoidMode">
+                    <option value="no">🔓 關閉：正常生成所有外圍點</option>
+                    <option value="yes">🚫 開啟：不踩到任何一個中心點半徑內</option>
+                </select>
+            </div>
+            
+            <div>
                 <label for="radiusDistance">📏 光圈半徑 (公尺): </label>
-                <input type="number" id="radiusDistance" value="12" min="1">
+                <input type="number" id="radiusDistance" value="12" min="1" style="width: 60px;">
             </div>
 
             <div>
@@ -140,12 +183,22 @@
     <div class="flex-grid">
         <div class="col">
             <label for="inputCoords">原始花朵中心座標 (每行一組)</label>
-            <textarea id="inputCoords" placeholder="請貼入座標，例如：&#10;26.862093,81.037686&#10;26.863357,81.037418"></textarea>
-            <div class="demo-text">💡 提示：手動將座標貼進來，每行一組即可開始計算。</div>
+            <textarea id="inputCoords" placeholder="請貼入座標..."></textarea>
+        </div>
+        
+        <div class="col-sidebar">
+            <label>💾 儲存當前輸入</label>
+            <div style="display: flex; gap: 5px; margin-top: 8px; margin-bottom: 15px;">
+                <input type="text" id="saveName" placeholder="輸入此路線名稱..." style="width: 100%; padding: 6px;">
+                <button class="btn-save" onclick="saveCurrentCoords()" style="padding: 6px 12px; font-size: 13px;">儲存</button>
+            </div>
+            <label>📋 已存清單 (點擊可載入)</label>
+            <ul id="historyList" class="history-list">
+                </ul>
         </div>
         
         <div class="col">
-            <label for="outputCoords">運算後的果實觸發點座標</label>
+            <label for="outputCoords">運算後的安全觸發點座標</label>
             <textarea id="outputCoords" readonly placeholder="點擊下方按鈕後，轉換後的座標會立刻顯示在這裡..."></textarea>
         </div>
     </div>
@@ -157,7 +210,21 @@
 </div>
 
 <script>
-// 基礎數學：計算兩點距離平方
+// 預填預設範例座標
+document.getElementById('inputCoords').value = `26.862093,81.037686
+26.863357,81.037418
+26.864346,81.037161
+26.863167,81.038422
+26.865045,81.039120
+26.865547,81.039940
+26.863643,81.040191`;
+
+// 網頁開啟時，自動載入歷史紀錄
+window.onload = function() {
+    renderHistory();
+};
+
+// 基礎數學：計算距離平方
 function getDistanceSq(p1, p2) {
     return (p1.lat - p2.lat) * (p1.lat - p2.lat) + (p1.lng - p2.lng) * (p1.lng - p2.lng);
 }
@@ -165,11 +232,8 @@ function getDistanceSq(p1, p2) {
 // 智慧路徑排序
 function optimizePath(coordsList) {
     if (coordsList.length <= 2) return coordsList;
-    
     var unvisited = [];
-    for(var i = 0; i < coordsList.length; i++) {
-        unvisited.push(coordsList[i]);
-    }
+    for(var i = 0; i < coordsList.length; i++) { unvisited.push(coordsList[i]); }
     
     var optimized = [];
     var current = unvisited.shift();
@@ -178,7 +242,6 @@ function optimizePath(coordsList) {
     while (unvisited.length > 0) {
         var nearestIndex = 0;
         var minDist = getDistanceSq(current, unvisited[0]);
-        
         for (var i = 1; i < unvisited.length; i++) {
             var dist = getDistanceSq(current, unvisited[i]);
             if (dist < minDist) {
@@ -203,108 +266,56 @@ function shuffleArray(array) {
     return array;
 }
 
-// 主執行程式
-function mainProcessor() {
-    var inputEl = document.getElementById('inputCoords');
-    var outputEl = document.getElementById('outputCoords');
+// 歷史紀錄儲存功能
+function saveCurrentCoords() {
+    var name = document.getElementById('saveName').value.trim();
+    var coordsText = document.getElementById('inputCoords').value.trim();
     
-    if (!inputEl || !outputEl) return;
+    if (!name) { alert('請輸入要儲存的名稱！'); return; }
+    if (!coordsText) { alert('左側輸入框沒有座標可以儲存！'); return; }
     
-    var inputText = inputEl.value.trim();
-    if (!inputText) { 
-        alert('請先在左側框內輸入或貼上座標！'); 
-        return; 
-    }
-
-    var lines = inputText.split('\n');
-    var coords = [];
+    var store = localStorage.getItem('map_coord_history');
+    var historyObj = store ? JSON.parse(store) : {};
     
-    for (var i = 0; i < lines.length; i++) {
-        var line = lines[i].trim();
-        if(!line) continue;
-        
-        var parts = line.split(',');
-        if (parts.length === 2) {
-            var latVal = parseFloat(parts[0].trim());
-            var lngVal = parseFloat(parts[1].trim());
-            if (!isNaN(latVal) && !isNaN(lngVal)) {
-                coords.push({ lat: latVal, lng: lngVal, originalId: (i + 1) });
-            }
-        }
-    }
-
-    if (coords.length === 0) { 
-        alert('無法辨識座標！請確保每行格式為：緯度,經度\n例如：26.862093,81.037686'); 
-        return; 
-    }
-
-    var selectedMode = document.getElementById('processMode').value;
-    var radius = parseFloat(document.getElementById('radiusDistance').value) || 12;
-    var direction = document.getElementById('outputMode').value;
+    historyObj[name] = coordsText; // 以名稱為 Key 儲存內容
+    localStorage.setItem('map_coord_history', JSON.stringify(historyObj));
     
-    var latDegreePerMeter = 1 / 111000;
-    var lngDegreePerMeter = 1 / 99000;
-    var offsetLatVal = radius * latDegreePerMeter;
-    var offsetLngVal = radius * lngDegreePerMeter;
-
-    if (selectedMode === 'bestPath') {
-        coords = optimizePath(coords);
-    }
-
-    var rawResults = [];
-
-    for (var i = 0; i < coords.length; i++) {
-        var c = coords[i];
-        var displayId = (selectedMode === 'bestPath') ? ('第 ' + (i + 1) + ' 站') : ('原中心點 ' + c.originalId);
-        
-        var north = (c.lat + offsetLatVal).toFixed(6) + ',' + c.lng.toFixed(6);
-        var south = (c.lat - offsetLatVal).toFixed(6) + ',' + c.lng.toFixed(6);
-        var east  = c.lat.toFixed(6) + ',' + (c.lng + offsetLngVal).toFixed(6);
-        var west  = c.lat.toFixed(6) + ',' + (c.lng - offsetLngVal).toFixed(6);
-
-        if (direction === 'four') {
-            rawResults.push({ coord: north, note: displayId + ' [北]' });
-            rawResults.push({ coord: south, note: displayId + ' [南]' });
-            rawResults.push({ coord: east,  note: displayId + ' [東]' });
-            rawResults.push({ coord: west,  note: displayId + ' [西]' });
-        } else {
-            var targetCoord = '';
-            if (direction === 'north') targetCoord = north;
-            if (direction === 'south') targetCoord = south;
-            if (direction === 'east')  targetCoord = east;
-            if (direction === 'west')  targetCoord = west;
-            rawResults.push({ coord: targetCoord, note: displayId });
-        }
-    }
-
-    if (selectedMode === 'shuffle') {
-        rawResults = shuffleArray(rawResults);
-    }
-
-    var displayLines = [];
-    for (var i = 0; i < rawResults.length; i++) {
-        displayLines.push(rawResults[i].coord + ' // ' + rawResults[i].note);
-    }
-    
-    outputEl.value = displayLines.join('\n');
+    document.getElementById('saveName').value = ''; // 清空輸入框
+    renderHistory(); // 重新整理清單
+    alert('💾 紀錄「' + name + '」儲存成功！');
 }
 
-function copyToClipboard() {
-    var outputEl = document.getElementById('outputCoords');
-    if (!outputEl || !outputEl.value) { 
-        alert('請先點擊計算按鈕產生座標！'); 
-        return; 
+// 渲染歷史紀錄清單到畫面上
+function renderHistory() {
+    var listEl = document.getElementById('historyList');
+    if (!listEl) return;
+    listEl.innerHTML = '';
+    
+    var store = localStorage.getItem('map_coord_history');
+    if (!store) {
+        listEl.innerHTML = '<li style="color:#aaa; font-size:12px; padding:5px;">暫無儲存紀錄</li>';
+        return;
     }
     
-    var cleanText = outputEl.value.replace(/\/\/.*$/gm, '').replace(/^\s*[\r\n]/gm, '').trim();
+    var historyObj = JSON.parse(store);
+    var keys = Object.keys(historyObj);
     
-    navigator.clipboard.writeText(cleanText).then(function() {
-        alert('📋 乾淨的座標資料已複製成功！');
-    }).catch(function() {
-        alert('複製功能被瀏覽器攔截，請直接手動框選右側框內文字複製。');
-    });
-}
-</script>
-
-</body>
-</html>
+    if (keys.length === 0) {
+        listEl.innerHTML = '<li style="color:#aaa; font-size:12px; padding:5px;">暫無儲存紀錄</li>';
+        return;
+    }
+    
+    for (var i = 0; i < keys.length; i++) {
+        (function(key) {
+            var li = document.createElement('li');
+            li.className = 'history-item';
+            
+            var nameSpan = document.createElement('span');
+            nameSpan.className = 'history-name';
+            nameSpan.innerText = key;
+            // 點擊名稱：將座標載入到左側輸入框
+            nameSpan.onclick = function() {
+                document.getElementById('inputCoords').value = historyObj[key];
+            };
+            
+            va
