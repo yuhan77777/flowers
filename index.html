@@ -234,6 +234,7 @@
                     if (allNodes[curr.id].circleIdx === targetLayer) { foundTargetId = curr.id; break; }
                     if (curr.d > dist[curr.id]) continue;
                     for (let edge of adj[curr.id]) {
+                        let newDist = dist[curr.id] + edge.weight;
                         if (newDist < dist[edge.to]) { dist[edge.to] = newDist; prev[edge.to] = curr.id; pq.push({ id: edge.to, d: newDist }); }
                     }
                 }
@@ -255,7 +256,6 @@
         var isPanning = false; var startPanX = 0, startPanY = 0;
         var rightClickX = 0, rightClickY = 0, rightClickTargetIdx = -1, rightClickInsertIdx = -1;
         
-        // 📱 手機觸控專用變數
         var lastTouchDist = 0; 
         var isPressHold = false, holdTimer = null;
 
@@ -274,15 +274,56 @@
             var file = event.target.files[0]; if (!file) return;
             var reader = new FileReader();
             reader.onload = function(e) {
-                var content = e.target.result, coords = [], match, tagRegex = /<[^>]+\s+lat=["']([^"']+)["']\s+lon=["']([^"']+)["'][^>]*>/g;
-                while ((match = tagRegex.exec(content)) !== null) {
-                    var lat = parseFloat(match[1]), lon = parseFloat(match[2]);
-                    if (!isNaN(lat) && !isNaN(lon)) coords.push(lat.toFixed(6) + "," + lon.toFixed(6));
+                var coords = [];
+                var content = e.target.result || "";
+                
+                try {
+                    var parser = new DOMParser();
+                    var xmlDoc = parser.parseFromString(content, "text/xml");
+                    var tags = ["wpt", "trkpt"];
+                    var nodes = [];
+                    tags.forEach(function(tag) {
+                        var list = xmlDoc.getElementsByTagName(tag);
+                        for (var i = 0; i < list.length; i++) nodes.push(list[i]);
+                        if (xmlDoc.getElementsByTagNameNS) {
+                            var listNS = xmlDoc.getElementsByTagNameNS("*", tag);
+                            for (var j = 0; j < listNS.length; j++) {
+                                if (nodes.indexOf(listNS[j]) === -1) nodes.push(listNS[j]);
+                            }
+                        }
+                    });
+                    
+                    for (var k = 0; k < nodes.length; k++) {
+                        var lat = parseFloat(nodes[k].getAttribute("lat"));
+                        var lon = parseFloat(nodes[k].getAttribute("lon"));
+                        if (!isNaN(lat) && !isNaN(lon)) {
+                            coords.push(lat.toFixed(6) + "," + lon.toFixed(6));
+                        }
+                    }
+                } catch(err) { console.log("DOM Parser 略過..."); }
+
+                if (coords.length === 0 && content) {
+                    var latMatches = []; var lonMatches = [];
+                    var latRegex = /\blat\s*=\s*['"]\s*(-?\d+\.\d+)\s*['"]/g;
+                    var lonRegex = /\blon\s*=\s*['"]\s*(-?\d+\.\d+)\s*['"]/g;
+                    var match;
+                    while ((match = latRegex.exec(content)) !== null) latMatches.push(parseFloat(match[1]));
+                    while ((match = lonRegex.exec(content)) !== null) lonMatches.push(parseFloat(match[1]));
+                    var totalCount = Math.min(latMatches.length, lonMatches.length);
+                    for (var m = 0; m < totalCount; m++) {
+                        if (!isNaN(latMatches[m]) && !isNaN(lonMatches[m])) {
+                            coords.push(latMatches[m].toFixed(6) + "," + lonMatches[m].toFixed(6));
+                        }
+                    }
                 }
+
                 if (coords.length > 0) {
                     document.getElementById('inputCoords').value = coords.join("\n");
-                    alert("📥 成功讀取 GPX 檔共 " + coords.length + " 個核心位置！");
-                } else { alert("❌ 無法解析此檔案！"); }
+                    alert("📥 成功讀取 GPX 檔共 " + coords.length + " 個位置點！");
+                    window.startProcess(); 
+                } else { 
+                    alert("❌ 讀取失敗：無法解析出任何經緯度座標。\n請確認該 GPX 檔案內是否包含真實的 lat 或 lon 軌跡屬性！"); 
+                }
                 event.target.value = ''; 
             };
             reader.readAsText(file);
@@ -292,12 +333,13 @@
             var txt = document.getElementById('inputCoords').value.trim(); if (!txt) return;
             var lines = txt.split('\n'), raw = [];
             for (var i = 0; i < lines.length; i++) {
-                var p = lines[i].split(',');
+                var p = lines[i].split('//')[0].split(',');
                 if (p.length >= 2) {
                     var lat = parseFloat(p[0]), lng = parseFloat(p[1]);
                     if (!isNaN(lat) && !isNaN(lng)) raw.push({lat: lat, lng: lng});
                 }
             }
+            if (raw.length === 0) return;
             var grid = new SpatialGrid();
             var algoPoints = raw.map(p => ({ lat: p.lat, lon: p.lng }));
             algoPoints.forEach((pt, i) => grid.insert(pt, i));
@@ -439,7 +481,6 @@
                 if (Math.hypot(rightClickX-pt.x, rightClickY-pt.y) < 25) { rightClickTargetIdx = i; break; }
             }
             var menu = document.getElementById('customContextMenu');
-            document.getElementById('menuInsert').style.display = 'none';
             document.getElementById('menuAddEnd').style.display = rightClickTargetIdx === -1 ? 'block' : 'none';
             document.getElementById('menuDel').style.display = rightClickTargetIdx !== -1 ? 'block' : 'none';
             menu.style.left = clientX + 'px'; menu.style.top = clientY + 'px'; menu.style.display = 'block';
@@ -454,69 +495,124 @@
             if (rightClickTargetIdx !== -1) { offsetPoints.splice(rightClickTargetIdx, 1); recalculateScaleAndInitPoints(); }
         };
 
+        // 🌟 核心：全新完美整合的滑鼠與觸控事件驅動引擎 🌟
         function setupEvents() {
-            // 🖱️ 桌機滑鼠事件維持
+            // --- A. 電腦滑鼠事件監聽 ---
             canvas.addEventListener('mousedown', function(e) {
-                if (e.button === 2) return;
-                var r = canvas.getBoundingClientRect(); var mx = e.clientX - r.left, my = e.clientY - r.top;
+                if (e.button === 2) return; // 略過滑鼠右鍵
+                var r = canvas.getBoundingClientRect(); 
+                var mx = e.clientX - r.left; 
+                var my = e.clientY - r.top;
+                
                 dragTargetIndex = -1;
                 for (var i = 0; i < offsetPoints.length; i++) {
                     var pt = toCanvasCoords(offsetPoints[i].lat, offsetPoints[i].lng);
-                    if (Math.hypot(mx-pt.x, my-pt.y) < 20) { dragTargetIndex = i; break; }
+                    if (Math.hypot(mx - pt.x, my - pt.y) < 20) { dragTargetIndex = i; break; }
                 }
-                if (dragTargetIndex === -1) { isPanning = true; startPanX = mx - viewOffsetX; startPanY = my - viewOffsetY; }
+                if (dragTargetIndex === -1) { 
+                    isPanning = true; 
+                    startPanX = mx - viewOffsetX; 
+                    startPanY = my - viewOffsetY; 
+                }
             });
-            canvas.addEventListener('mousemove', function(e) {
-                var r = canvas.getBoundingClientRect(); var mx = e.clientX - r.left, my = e.clientY - r.top;
-                if (isPanning) { viewOffsetX = mx - startPanX; viewOffsetY = my - startPanY; draw(); }
-                else if (dragTargetIndex !== -1) { var mapPt = toMapCoords(mx, my); offsetPoints[dragTargetIndex].lat = mapPt.lat; offsetPoints[dragTargetIndex].lng = mapPt.lng; window.processFinalRoute(); }
-            });
-            canvas.addEventListener('mouseup', function() { isPanning = false; dragTargetIndex = -1; });
-            canvas.addEventListener('contextmenu', function(e) { e.preventDefault(); triggerContextMenu(e.clientX, e.clientY); });
 
-            // 📱 手機觸控事件整合 (支援單指拖拽、長按彈出選單、雙指縮放)
+            canvas.addEventListener('mousemove', function(e) {
+                var r = canvas.getBoundingClientRect(); 
+                var mx = e.clientX - r.left; 
+                var my = e.clientY - r.top;
+                
+                if (dragTargetIndex !== -1) { 
+                    var mapPt = toMapCoords(mx, my); 
+                    offsetPoints[dragTargetIndex].lat = mapPt.lat; 
+                    offsetPoints[dragTargetIndex].lng = mapPt.lng; 
+                    window.processFinalRoute(); 
+                } else if (isPanning) { 
+                    viewOffsetX = mx - startPanX; 
+                    viewOffsetY = my - startPanY; 
+                    draw(); 
+                }
+            });
+
+            canvas.addEventListener('mouseup', function() { 
+                isPanning = false; 
+                dragTargetIndex = -1; 
+            });
+
+            canvas.addEventListener('contextmenu', function(e) { 
+                e.preventDefault(); 
+                triggerContextMenu(e.clientX, e.clientY); 
+            });
+
+
+            // --- B. 手機/平板觸控手勢監聽 (防止 Ghost Click 重複干擾) ---
             canvas.addEventListener('touchstart', function(e) {
+                if (e.cancelable) e.preventDefault(); // 阻止瀏覽器補發 mousedown 產生鬼點擊
                 var r = canvas.getBoundingClientRect();
-                if (e.touches.length === 1) {
-                    var mx = e.touches[0].clientX - r.left, my = e.touches[0].clientY - r.top;
+                
+                if (e.touches.length === 1) { // 單指：可能為 拖拽節點 或 平移視角 或 長按
+                    var mx = e.touches[0].clientX - r.left; 
+                    var my = e.touches[0].clientY - r.top;
+                    
                     dragTargetIndex = -1;
                     for (var i = 0; i < offsetPoints.length; i++) {
                         var pt = toCanvasCoords(offsetPoints[i].lat, offsetPoints[i].lng);
-                        if (Math.hypot(mx-pt.x, my-pt.y) < 30) { dragTargetIndex = i; break; } // 手機版放寬判定半徑為30px
+                        if (Math.hypot(mx - pt.x, my - pt.y) < 30) { dragTargetIndex = i; break; } // 手指感應範圍放寬
                     }
+                    
                     if (dragTargetIndex === -1) {
-                        isPanning = true; startPanX = mx - viewOffsetX; startPanY = my - viewOffsetY;
-                        // 長按偵測 (500ms) 用於替代右鍵選單
-                        var cx = e.touches[0].clientX, cy = e.touches[0].clientY;
-                        holdTimer = setTimeout(function() { isPressHold = true; triggerContextMenu(cx, cy); }, 600);
+                        isPanning = true; 
+                        startPanX = mx - viewOffsetX; 
+                        startPanY = my - viewOffsetY;
+                        
+                        var cx = e.touches[0].clientX; 
+                        var cy = e.touches[0].clientY;
+                        // 長按 0.6 秒開啟選單
+                        holdTimer = setTimeout(function() { 
+                            isPressHold = true; 
+                            triggerContextMenu(cx, cy); 
+                        }, 600);
                     }
-                } else if (e.touches.length === 2) {
-                    isPanning = false; dragTargetIndex = -1; clearTimeout(holdTimer);
+                } else if (e.touches.length === 2) { // 雙指：進入縮放模式
+                    isPanning = false; 
+                    dragTargetIndex = -1; 
+                    clearTimeout(holdTimer);
                     lastTouchDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
                 }
-            }, { passive: true });
+            }, { passive: false });
 
             canvas.addEventListener('touchmove', function(e) {
-                clearTimeout(holdTimer);
+                clearTimeout(holdTimer); // 只要手指有移動就取消長按選單定時器
                 var r = canvas.getBoundingClientRect();
-                if (e.touches.length === 1 && !isPressHold) {
-                    var mx = e.touches[0].clientX - r.left, my = e.touches[0].clientY - r.top;
+                
+                if (e.touches.length === 1 && !isPressHold) { // 單指移動
+                    var mx = e.touches[0].clientX - r.left; 
+                    var my = e.touches[0].clientY - r.top;
+                    
                     if (dragTargetIndex !== -1) {
                         var mapPt = toMapCoords(mx, my);
-                        offsetPoints[dragTargetIndex].lat = mapPt.lat; offsetPoints[dragTargetIndex].lng = mapPt.lng;
+                        offsetPoints[dragTargetIndex].lat = mapPt.lat; 
+                        offsetPoints[dragTargetIndex].lng = mapPt.lng;
                         window.processFinalRoute();
-                    } else if (isPanning) { viewOffsetX = mx - startPanX; viewOffsetY = my - startPanY; draw(); }
-                } else if (e.touches.length === 2) {
+                    } else if (isPanning) { 
+                        viewOffsetX = mx - startPanX; 
+                        viewOffsetY = my - startPanY; 
+                        draw(); 
+                    }
+                } else if (e.touches.length === 2) { // 雙指縮放
                     var dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
                     var factor = dist / (lastTouchDist || dist);
                     viewScale = Math.max(0.3, Math.min(25, viewScale * factor));
-                    lastTouchDist = dist; draw();
+                    lastTouchDist = dist; 
+                    draw();
                 }
-            }, { passive: true });
+            }, { passive: false });
 
             canvas.addEventListener('touchend', function() {
-                clearTimeout(holdTimer); isPanning = false; dragTargetIndex = -1; isPressHold = false;
-            }, { passive: true });
+                clearTimeout(holdTimer); 
+                isPanning = false; 
+                dragTargetIndex = -1; 
+                isPressHold = false;
+            }, { passive: false });
         }
 
         window.copyResult = function() {
@@ -560,11 +656,9 @@
     <h2>🗺️ LocWarp收果路線產生器</h2>
     
     <div class="explanation-panel">
-        ℹ️ <strong>手機操作說明：</strong><br>
-        1. <strong>手動拉伸：</strong>直接用手指按住黃色圓圈（節點）滑動，即可調整路線。<br>
-        2. <strong>平移畫面：</strong>單指按住空白處拖拽。<br>
-        3. <strong>縮放地圖：</strong>使用兩隻手指進行雙指放大縮小。<br>
-        4. <strong>新增/刪除節點：</strong>在畫布上<strong>「長按 0.6 秒」</strong>即可彈出功能選單。
+        ℹ️ <strong>跨平台操作說明：</strong><br>
+        • <strong>電腦：</strong>滑鼠左鍵拖拽黃圈調整路線、空白處按住拖拽移動視野、右鍵彈出新增/刪除節點選單。<br>
+        • <strong>手機/平板：</strong>手指直接按住黃圈拖拽調整、雙指張開/合攏可放大縮小、在畫布上<strong>「長按 0.6 秒」</strong>彈出選單。
     </div>
 
     <div class="color-legend">
